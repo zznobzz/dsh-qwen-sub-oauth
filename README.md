@@ -10,7 +10,7 @@ The old free Qwen OAuth (`chat.qwen.ai/api/v1/oauth2/*`) was shut down on 2026-0
 
 - Registers the provider route `qwen-sub-oauth` (`api.qwen.ai/compatible-mode/v1`, models `qwen3.8-max`, `qwen3.8-flash`, `qwen4-max`, 1M context) in `llm-pi-ai` — through the DSH config editor, so installing the bundle is enough.
 - Starts the OAuth device flow on activation when no refresh token is stored yet, and prints the verification URL to the host console.
-- Exposes `/qwen-login` (show the pending URL/code, or start a fresh flow) and `/qwen-status` (token presence and expiry) inside the GUI.
+- Exposes `/qwen-login` (show the pending URL/code, or start a fresh flow), `/qwen-status` (token presence and expiry) and `/qwen-setup` (register the route again if the automatic attempt was refused) inside the GUI.
 - Refreshes the access token before it expires and writes `QWEN_SUB_OAUTH_TOKEN` / `QWEN_SUB_OAUTH_REFRESH` into the credential store. LLM adapters re-read the reference per request, so rotation needs no restart.
 
 ## Requirements
@@ -45,6 +45,7 @@ Pick **Qwen (подписка OAuth)** in the model selector and choose `qwen3.8
 ```
 /qwen-login     # pending verification link + code, or a fresh flow
 /qwen-status    # authorized? when does the access token expire?
+/qwen-setup     # add the provider route to llm-pi-ai again
 ```
 
 ## Configuration
@@ -96,7 +97,7 @@ A `User-Agent` of the `QwenCode/…` shape is mandatory: Aliyun WAF answers `405
 - `MISSING_CREDENTIAL` / `PROXY_TOKEN_MISSING` — no token in the store: run `/qwen-login`.
 - `invalid_grant` during refresh — the refresh token was revoked: rerun `/qwen-login` (delete `QWEN_SUB_OAUTH_REFRESH` first if the plugin still considers you signed in).
 - `405` plus HTML instead of JSON — a request went out without the `QwenCode/…` User-Agent.
-- No route in the model selector — `llm-pi-ai` was not reloaded; restart the profile, or add the provider block manually.
+- No route in the model selector — run `/qwen-setup`; if it reports a configuration error, add the provider block manually or restart the profile.
 
 ## Uninstall
 

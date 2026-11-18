@@ -42,8 +42,6 @@ const ROUTE_MODELS = [
 ]
 /** Host-process log next to the harness home: the web UI has no console. */
 const LOG_FILE = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'qwen-sub-oauth.log')
-/** Delays before each route-registration attempt (a fresh install holds an HMR transaction open). */
-const ROUTE_ATTEMPTS = [5000, 20000, 60000]
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000
 /** Refresh this long before the access token actually expires. */
 const SKEW_MS = 10 * 60 * 1000
@@ -327,6 +325,17 @@ export function apply(ctx, config) {
     }))
 
     ctx.effect(() => commands.register({
+      name: 'qwen-setup',
+      description: 'Добавить маршрут qwen-sub-oauth в llm-pi-ai',
+      handler: async () => {
+        const applied = await ensureRoute(ctx, warn)
+        return applied
+          ? { kind: 'success', text: `Маршрут ${ROUTE} в llm-pi-ai настроен. Модели: ${ROUTE_MODELS.map(model => model.id).join(', ')}` }
+          : { kind: 'error', text: `Не удалось изменить конфигурацию: см. ${LOG_FILE}. Добавьте провайдера в патч профиля вручную (см. README).` }
+      },
+    }))
+
+    ctx.effect(() => commands.register({
       name: 'qwen-status',
       description: 'Состояние авторизации Qwen по подписке',
       handler: async () => ({ kind: 'success', text: await status() }),
@@ -346,18 +355,16 @@ export function apply(ctx, config) {
     }
   })
 
-  // Deferred and retried: a bundle installation keeps an HMR transaction open
-  // for a few seconds and the config editor opens its own one, so an immediate
-  // edit fails with "HMR transactions cannot be nested".
+  // The config editor opens an HMR transaction, so an edit issued from inside
+  // the plugin's own activation (whose async context still carries that
+  // transaction) is refused: activation only tries once and points at
+  // /qwen-setup, whose handler runs outside that context.
   if (configureRoute) {
-    const attempt = index => {
-      const timer = setTimeout(async () => {
-        const applied = await ensureRoute(ctx, warn)
-        if (!applied && index + 1 < ROUTE_ATTEMPTS.length) attempt(index + 1)
-      }, ROUTE_ATTEMPTS[index])
-      timer.unref?.()
-    }
-    attempt(0)
+    const timer = setTimeout(async () => {
+      const applied = await ensureRoute(ctx, warn)
+      if (!applied) log('warn', 'маршрут не добавлен автоматически: выполните /qwen-setup')
+    }, 5000)
+    timer.unref?.()
   }
 
   void (async () => {
