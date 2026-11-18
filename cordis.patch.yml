@@ -1,6 +1,6 @@
 - insert:
     - id: qwen-sub-oauth
-      name: '@local/dsh-qwen-sub-oauth'
+      name: dsh-qwen-sub-oauth
       config:
         autoLogin: true
         configureRoute: true
