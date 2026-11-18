@@ -1,6 +1,6 @@
 {
   "name": "dsh-qwen-sub-oauth",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Qwen Plus/Pro subscription as a DeepSeek Harness provider: OAuth device flow, automatic token rotation, no API key.",
   "private": false,
   "type": "module",

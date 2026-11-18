@@ -42,6 +42,8 @@ const ROUTE_MODELS = [
 ]
 /** Host-process log next to the harness home: the web UI has no console. */
 const LOG_FILE = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'qwen-sub-oauth.log')
+/** Delays before each route-registration attempt (a fresh install holds an HMR transaction open). */
+const ROUTE_ATTEMPTS = [5000, 20000, 60000]
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000
 /** Refresh this long before the access token actually expires. */
 const SKEW_MS = 10 * 60 * 1000
@@ -128,15 +130,15 @@ async function ensureRoute(ctx, warn) {
   const editor = ctx.get('configEditor')
   if (editor === undefined) {
     log('warn', 'configEditor недоступен, маршрут не регистрируется автоматически')
-    return
+    return true
   }
   try {
     log('debug', `entries: ${JSON.stringify(editor.entries().map(row => ({ id: row.options?.id, name: row.options?.name })))}`)
     const entry = editor.entries().find(row => row.options?.name === '@deepseek-ai/dsh-llm-pi-ai')
-    if (entry === undefined) return
+    if (entry === undefined) return true
     const { override } = editor.configuration().find(row => row.entry.options.id === entry.options.id) ?? {}
     const providers = override?.providers
-    if (providers !== null && typeof providers === 'object' && ROUTE in providers) return
+    if (providers !== null && typeof providers === 'object' && ROUTE in providers) return true
     await editor.edit(entry, current => ({
       ...current,
       providers: {
@@ -152,8 +154,11 @@ async function ensureRoute(ctx, warn) {
     }))
     log('info', `маршрут ${ROUTE} добавлен в llm-pi-ai`)
     console.info(`[qwen-sub-oauth] маршрут ${ROUTE} добавлен в llm-pi-ai`)
+    return true
   } catch (error) {
-    warn(`не удалось добавить маршрут ${ROUTE}: ${error instanceof Error ? error.message : String(error)}`)
+    const message = error instanceof Error ? error.message : String(error)
+    warn(`не удалось добавить маршрут ${ROUTE}: ${message}`)
+    return !message.includes('cannot be nested')
   }
 }
 
@@ -341,11 +346,18 @@ export function apply(ctx, config) {
     }
   })
 
-  // Deferred: the bundle activation itself runs inside an HMR transaction, and
-  // the config editor opens its own one.
+  // Deferred and retried: a bundle installation keeps an HMR transaction open
+  // for a few seconds and the config editor opens its own one, so an immediate
+  // edit fails with "HMR transactions cannot be nested".
   if (configureRoute) {
-    const defer = setTimeout(() => void ensureRoute(ctx, warn), 2000)
-    defer.unref?.()
+    const attempt = index => {
+      const timer = setTimeout(async () => {
+        const applied = await ensureRoute(ctx, warn)
+        if (!applied && index + 1 < ROUTE_ATTEMPTS.length) attempt(index + 1)
+      }, ROUTE_ATTEMPTS[index])
+      timer.unref?.()
+    }
+    attempt(0)
   }
 
   void (async () => {
