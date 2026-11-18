@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.3
+
+- Fix the real activation crash: every `ctx.credentials` property read inside async continuations could resolve from a foreign shadow fiber whose ancestor walk misses the provider ('cannot get property "credentials" without inject' — see DSH postmortem 0001). All service reads now go through the topology-independent `ctx.get()`; child-fiber callbacks read their gated services the same way.
+
 ## 1.3.2
 
 - Fix activation for real: Cordis has no `required`/`optional`/`any` inject forms — every declared service gates the row, so 1.3.0/1.3.1 stayed pending (`waiting for services`) on hosts lacking one of them. The row now requires only `credentials`; the slash commands and the system-prompt relay mount as child `ctx.inject` fibers that simply stay inactive when their surface is absent.

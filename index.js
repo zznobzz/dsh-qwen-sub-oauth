@@ -200,6 +200,13 @@ export function apply(ctx, config) {
     controller = undefined
   }
 
+  // `ctx.inject(['credentials'])` gates activation, but reading the service
+  // through the property proxy inside async continuations can resolve from a
+  // foreign shadow fiber whose ancestor walk misses it ('cannot get property
+  // "credentials" without inject', postmortem 0001). ctx.get is the topology-
+  // independent lookup and re-reads the current provider each call.
+  const credentials = () => ctx.get('credentials') ?? ctx.credentials
+
   /** Set while a device flow waits for approval; read by the prompt relay below. */
   let pendingRelay
   const registerLoginSection = target => {
@@ -210,18 +217,18 @@ export function apply(ctx, config) {
   }
 
   const storeTokens = async tokens => {
-    await ctx.credentials.set(ACCESS_REF, tokens.access_token)
+    await credentials().set(ACCESS_REF, tokens.access_token)
     if (typeof tokens.refresh_token === 'string' && tokens.refresh_token !== '') {
-      await ctx.credentials.set(REFRESH_REF, tokens.refresh_token)
+      await credentials().set(REFRESH_REF, tokens.refresh_token)
     }
   }
 
   /** Refresh only when the stored access token is missing or about to expire. */
   const rotate = async () => {
-    const stored = await ctx.credentials.resolve(REFRESH_REF)
+    const stored = await credentials().resolve(REFRESH_REF)
     const refreshToken = stored?.value
     if (refreshToken === undefined || refreshToken === '') return
-    const current = await ctx.credentials.resolve(ACCESS_REF)
+    const current = await credentials().resolve(ACCESS_REF)
     const currentToken = current?.value
     if (currentToken !== undefined && currentToken !== '') {
       const expiry = expiresAt(currentToken)
@@ -328,8 +335,8 @@ export function apply(ctx, config) {
     + `Код: ${flow.user_code} · истекает через ${formatLeft(flow.expiresAt - Date.now())}`
 
   const status = async () => {
-    const access = await ctx.credentials.resolve(ACCESS_REF)
-    const refresh = await ctx.credentials.resolve(REFRESH_REF)
+    const access = await credentials().resolve(ACCESS_REF)
+    const refresh = await credentials().resolve(REFRESH_REF)
     if (refresh?.value === undefined || refresh.value === '') return 'Авторизация не выполнена: /qwen-login'
     if (access?.value === undefined || access.value === '') return 'Refresh-токен есть, access-токен будет получен при первом обновлении'
     const expiry = expiresAt(access.value)
@@ -386,7 +393,7 @@ export function apply(ctx, config) {
 
   // Child fiber: registers the slash commands only where a command surface exists.
   ctx.inject(['commands'], scope => {
-    const commands = scope.commands
+    const commands = scope.get('commands')
     scope.effect(() => commands.register({
       name: 'qwen-login',
       description: 'Вход в Qwen по подписке (OAuth device flow)',
@@ -394,7 +401,7 @@ export function apply(ctx, config) {
         try {
           let flow = describePendingFlow()
           if (flow === undefined) {
-            const refresh = await ctx.credentials.resolve(REFRESH_REF)
+            const refresh = await credentials().resolve(REFRESH_REF)
             if (refresh?.value !== undefined && refresh.value !== '' && invocation.rawInput.trim() !== '--force') {
               // Re-auth only makes sense for a different account; keep it explicit.
               return { kind: 'success', text: `Уже авторизовано. ${await status()}\nДля другого аккаунта: /qwen-login --force.` }
@@ -455,7 +462,7 @@ export function apply(ctx, config) {
   void (async () => {
     await tick()
     if (!autoLogin) return
-    const refresh = await ctx.credentials.resolve(REFRESH_REF)
+    const refresh = await credentials().resolve(REFRESH_REF)
     if (refresh?.value !== undefined && refresh.value !== '') return
     try {
       const flow = await startFlow()
