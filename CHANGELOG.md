@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.4
+
+- Declare `input: [text, image]` on the registered route models: without it a hand-declared entry defaults to text-only, so the GUI refused images on Qwen subscription chats even though the gateway serves vision (verified against qwen4-max).
+
 ## 1.3.3
 
 - Fix the real activation crash: every `ctx.credentials` property read inside async continuations could resolve from a foreign shadow fiber whose ancestor walk misses the provider ('cannot get property "credentials" without inject' — see DSH postmortem 0001). All service reads now go through the topology-independent `ctx.get()`; child-fiber callbacks read their gated services the same way.

@@ -165,7 +165,7 @@ async function ensureRoute(ctx, warn) {
           api: 'openai-completions',
           baseURL: API_BASE,
           apiKeyEnv: ACCESS_REF,
-          models: ROUTE_MODELS,
+          models: ROUTE_MODELS.map(model => ({ ...model, input: ['text', 'image'] })),
         },
       },
     }))
