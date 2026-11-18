@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- Fix activation: the object-form `inject` added in 1.3.0 made the row stay pending (Cordis reads a bare array as all-required); now only `credentials` is required, with `commands`/`systemPrompt` as an `any` gate and `agents` optional.
+
 ## 1.3.0
 
 - The approval link now reaches the user through a system-prompt section instead of an interactive card: `userQuestions.ask()` from a plugin fails with `NO_PROVIDER` in the Web profile (its answerer only accepts tool-scoped requests), so the previous "card" path never rendered for anyone but the answering model. While a sign-in is pending, the plugin contributes a prompt section that names the exact `/authorize` URL and instructs the assistant to relay it verbatim; the section is disposed once the flow completes, expires or unmounts. `/qwen-login` confirms the pending code and points at the relay.
