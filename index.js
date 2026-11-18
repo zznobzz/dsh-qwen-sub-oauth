@@ -21,6 +21,10 @@
  * @module @local/dsh-qwen-sub-oauth
  */
 
+import { appendFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 const AUTH_BASE = 'https://auth.qwen.ai'
 const API_BASE = 'https://api.qwen.ai/compatible-mode/v1'
 const CLIENT_ID = 'qwen-code-cli'
@@ -36,6 +40,8 @@ const ROUTE_MODELS = [
   { id: 'qwen3.8-flash', name: 'Qwen3.8 Flash', contextWindow: 1000000, maxTokens: 32768 },
   { id: 'qwen4-max', name: 'Qwen4 Max', contextWindow: 1000000, maxTokens: 32768 },
 ]
+/** Host-process log next to the harness home: the web UI has no console. */
+const LOG_FILE = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'qwen-sub-oauth.log')
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000
 /** Refresh this long before the access token actually expires. */
 const SKEW_MS = 10 * 60 * 1000
@@ -43,6 +49,14 @@ const TIMEOUT_MS = 30_000
 
 export const name = 'qwen-sub-oauth'
 export const inject = ['credentials']
+
+function log(level, message) {
+  try {
+    appendFileSync(LOG_FILE, `${new Date().toISOString()} ${level} ${message}\n`)
+  } catch {
+    // logging must never break the plugin
+  }
+}
 
 /** Decode a JWT payload without verifying it; `undefined` for opaque tokens. */
 function jwtPayload(token) {
@@ -112,8 +126,12 @@ function sleep(ms, signal) {
 /** Install the pi-ai route when the profile has none yet; never rewrites other providers. */
 async function ensureRoute(ctx, warn) {
   const editor = ctx.get('configEditor')
-  if (editor === undefined) return
+  if (editor === undefined) {
+    log('warn', 'configEditor недоступен, маршрут не регистрируется автоматически')
+    return
+  }
   try {
+    log('debug', `entries: ${JSON.stringify(editor.entries().map(row => ({ id: row.options?.id, name: row.options?.name })))}`)
     const entry = editor.entries().find(row => row.options?.name === '@deepseek-ai/dsh-llm-pi-ai')
     if (entry === undefined) return
     const { override } = editor.configuration().find(row => row.entry.options.id === entry.options.id) ?? {}
@@ -132,6 +150,7 @@ async function ensureRoute(ctx, warn) {
         },
       },
     }))
+    log('info', `маршрут ${ROUTE} добавлен в llm-pi-ai`)
     console.info(`[qwen-sub-oauth] маршрут ${ROUTE} добавлен в llm-pi-ai`)
   } catch (error) {
     warn(`не удалось добавить маршрут ${ROUTE}: ${error instanceof Error ? error.message : String(error)}`)
@@ -144,7 +163,10 @@ export function apply(ctx, config) {
     : DEFAULT_INTERVAL_MS
   const autoLogin = config?.autoLogin !== false
   const configureRoute = config?.configureRoute !== false
-  const warn = message => console.warn(`[qwen-sub-oauth] ${message}`)
+  const warn = message => {
+    log('warn', message)
+    console.warn(`[qwen-sub-oauth] ${message}`)
+  }
 
   /** Pending device flow, shared by the command and the background poll. */
   let pending
@@ -203,6 +225,7 @@ export function apply(ctx, config) {
       ...body,
       expiresAt: Date.now() + Number(body.expires_in ?? 600) * 1000,
     }
+    log('info', `авторизация: ${pending.verification_uri_complete} (код ${pending.user_code})`)
     console.info(`[qwen-sub-oauth] авторизация: ${pending.verification_uri_complete} (код ${pending.user_code})`)
     void poll()
     return pending
@@ -227,6 +250,7 @@ export function apply(ctx, config) {
           await storeTokens(body)
           pending = undefined
           email = await getUserInfo(body.access_token)
+          log('info', `авторизация завершена${email ? ` (${email})` : ''}`)
           console.info(`[qwen-sub-oauth] авторизация завершена${email ? ` (${email})` : ''}`)
           return
         }
