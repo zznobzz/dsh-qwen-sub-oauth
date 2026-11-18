@@ -42,6 +42,7 @@ const ROUTE_MODELS = [
 ]
 /** Host-process log next to the harness home: the web UI has no console. */
 const LOG_FILE = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'qwen-sub-oauth.log')
+const CHAT_ORIGIN = 'https://chat.qwen.ai'
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000
 /** Refresh this long before the access token actually expires. */
 const SKEW_MS = 10 * 60 * 1000
@@ -49,6 +50,21 @@ const TIMEOUT_MS = 30_000
 
 export const name = 'qwen-sub-oauth'
 export const inject = ['credentials']
+
+/**
+ * The approval page. The device-code response advertises `/device`, but the
+ * deployed chat.qwen.ai SPA has no such route and falls back to the chat home,
+ * so the CLI builds `/authorize` itself (qwen-code's qwen/subscription-oauth
+ * client does exactly this). The two tracking params keep the flow attributed.
+ */
+function authorizationUrl(userCode) {
+  const url = new URL('/authorize', CHAT_ORIGIN)
+  url.searchParams.set('user_code', userCode)
+  url.searchParams.set('client', 'cli')
+  url.searchParams.set('entry', 'qwen_code')
+  url.searchParams.set('paywallScene', 'cli')
+  return url.toString()
+}
 
 function log(level, message) {
   try {
@@ -226,6 +242,8 @@ export function apply(ctx, config) {
     }
     pending = {
       ...body,
+      verification_uri: authorizationUrl(body.user_code),
+      verification_uri_complete: authorizationUrl(body.user_code),
       expiresAt: Date.now() + Number(body.expires_in ?? 600) * 1000,
     }
     log('info', `авторизация: ${pending.verification_uri_complete} (код ${pending.user_code})`)

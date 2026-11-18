@@ -97,6 +97,7 @@ A `User-Agent` of the `QwenCode/…` shape is mandatory: Aliyun WAF answers `405
 - `MISSING_CREDENTIAL` / `PROXY_TOKEN_MISSING` — no token in the store: run `/qwen-login`.
 - `invalid_grant` during refresh — the refresh token was revoked: rerun `/qwen-login` (delete `QWEN_SUB_OAUTH_REFRESH` first if the plugin still considers you signed in).
 - `405` plus HTML instead of JSON — a request went out without the `QwenCode/…` User-Agent.
+- The verification link lands on the chat home page — use the `/authorize` link this plugin prints. The `device` URI that the token endpoint advertises has no route in the deployed SPA; `/authorize?user_code=…&client=cli` is what Qwen Code itself opens.
 - No route in the model selector — run `/qwen-setup`; if it reports a configuration error, add the provider block manually or restart the profile.
 
 ## Uninstall
