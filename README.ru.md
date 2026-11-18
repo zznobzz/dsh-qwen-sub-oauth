@@ -8,7 +8,7 @@
 
 ## Что делает
 
-- Регистрирует маршрут провайдера `qwen-sub-oauth` (`api.qwen.ai/compatible-mode/v1`, модели `qwen3.8-max`, `qwen3.8-flash`, `qwen4-max`, контекст 1M) в `llm-pi-ai` — через конфигурационный редактор DSH, поэтому достаточно установить бандл.
+- Регистрирует маршрут провайдера `qwen-sub-oauth` (`api.qwen.ai/compatible-mode/v1`, модели `qwen3.8-max`, `qwen3.8-flash`, `qwen4-max`, контекст 1M) в `llm-pi-ai` через конфигурационный редактор DSH. Пробует при активации; если хост отклоняет правку, пока транзакция установки ещё открыта, маршрут добавит `/qwen-setup`.
 - При активации сам запускает OAuth device flow, если refresh-токена ещё нет, и печатает ссылку подтверждения в консоль хоста.
 - Добавляет в GUI команды `/qwen-login` (показать ожидающую ссылку/код или начать новый вход), `/qwen-status` (наличие токена и срок жизни) и `/qwen-setup` (повторная регистрация маршрута, если автоматическая попытка отклонена).
 - Обновляет access-токен до истечения и пишет `QWEN_SUB_OAUTH_TOKEN` / `QWEN_SUB_OAUTH_REFRESH` в хранилище кредов. LLM-адаптер читает ref на каждый запрос, поэтому перезапуск для ротации не нужен.
@@ -24,19 +24,15 @@
 dsh plugin --profile web add github:zznobzz/dsh-qwen-sub-oauth
 ```
 
-Затем перезапустите профиль, если хост не подхватил бандл автоматически:
-
-```bash
-sudo systemctl restart dsh-web   # или та команда, которой вы запускаете dsh web
-```
+Бандл активируется на лету через HMR — на штатном профиле перезапуск не нужен. (Если хост запущен с отключённым HMR, перезапустите профиль один раз.)
 
 При первой активации плагин начинает device flow и пишет в лог ссылку:
 
 ```
-[qwen-sub-oauth] авторизация: https://chat.qwen.ai/device?user_code=XXXX-XXXX (код XXXX-XXXX)
+[qwen-sub-oauth] авторизация: https://chat.qwen.ai/authorize?user_code=XXXX-XXXX&client=cli (код XXXX-XXXX)
 ```
 
-Откройте её в браузере, войдите аккаунтом с подпиской и дождитесь `authorization completed` в консоли. В GUI `/qwen-login` покажет ожидающую ссылку или начнёт новый вход, `/qwen-status` покажет текущее состояние.
+Откройте её в браузере (вы уже должны быть авторизованы в chat.qwen.ai), подтвердите код и дождитесь `авторизация завершена` в логе. Затем выполните `/qwen-setup`, чтобы зарегистрировать маршрут. В GUI `/qwen-login` покажет ожидающую ссылку или начнёт новый вход, `/qwen-status` покажет текущее состояние.
 
 ## Использование
 
@@ -84,7 +80,7 @@ sudo systemctl restart dsh-web   # или та команда, которой в
 | Шаг | Запрос |
 |---|---|
 | Код устройства | `POST https://auth.qwen.ai/api/oauth/device/code` — `client_id=qwen-code-cli`, `scope="model:invoke profile:read"` |
-| Подтверждение | `https://chat.qwen.ai/device?user_code=…` |
+| Подтверждение | `https://chat.qwen.ai/authorize?user_code=…&client=cli` (у рекламируемого URI `/device` нет маршрута в SPA) |
 | Токен | `POST https://auth.qwen.ai/api/oauth/token` — `grant_type=urn:ietf:params:oauth:grant-type:device_code` |
 | Обновление | `POST https://auth.qwen.ai/api/oauth/token` — `grant_type=refresh_token` |
 | Профиль | `GET https://auth.qwen.ai/api/oauth/userinfo` |

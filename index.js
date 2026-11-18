@@ -147,7 +147,6 @@ async function ensureRoute(ctx, warn) {
     return true
   }
   try {
-    log('debug', `entries: ${JSON.stringify(editor.entries().map(row => ({ id: row.options?.id, name: row.options?.name })))}`)
     const entry = editor.entries().find(row => row.options?.name === '@deepseek-ai/dsh-llm-pi-ai')
     if (entry === undefined) return true
     const { override } = editor.configuration().find(row => row.entry.options.id === entry.options.id) ?? {}

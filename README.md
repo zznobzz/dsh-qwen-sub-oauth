@@ -8,7 +8,7 @@ The old free Qwen OAuth (`chat.qwen.ai/api/v1/oauth2/*`) was shut down on 2026-0
 
 ## What it does
 
-- Registers the provider route `qwen-sub-oauth` (`api.qwen.ai/compatible-mode/v1`, models `qwen3.8-max`, `qwen3.8-flash`, `qwen4-max`, 1M context) in `llm-pi-ai` — through the DSH config editor, so installing the bundle is enough.
+- Registers the provider route `qwen-sub-oauth` (`api.qwen.ai/compatible-mode/v1`, models `qwen3.8-max`, `qwen3.8-flash`, `qwen4-max`, 1M context) in `llm-pi-ai` through the DSH config editor. It tries on activation; if the host refuses the edit while the install transaction is still open, `/qwen-setup` completes it.
 - Starts the OAuth device flow on activation when no refresh token is stored yet, and prints the verification URL to the host console.
 - Exposes `/qwen-login` (show the pending URL/code, or start a fresh flow), `/qwen-status` (token presence and expiry) and `/qwen-setup` (register the route again if the automatic attempt was refused) inside the GUI.
 - Refreshes the access token before it expires and writes `QWEN_SUB_OAUTH_TOKEN` / `QWEN_SUB_OAUTH_REFRESH` into the credential store. LLM adapters re-read the reference per request, so rotation needs no restart.
@@ -24,19 +24,15 @@ The old free Qwen OAuth (`chat.qwen.ai/api/v1/oauth2/*`) was shut down on 2026-0
 dsh plugin --profile web add github:zznobzz/dsh-qwen-sub-oauth
 ```
 
-Then restart the profile if the host does not pick the bundle up automatically:
-
-```bash
-sudo systemctl restart dsh-web   # or however you run dsh web
-```
+The bundle activates live through HMR — no restart needed on a standard profile. (If your host runs with HMR disabled, restart the profile once.)
 
 On first activation the plugin starts the device flow and logs a link such as:
 
 ```
-[qwen-sub-oauth] авторизация: https://chat.qwen.ai/device?user_code=XXXX-XXXX (код XXXX-XXXX)
+[qwen-sub-oauth] авторизация: https://chat.qwen.ai/authorize?user_code=XXXX-XXXX&client=cli (код XXXX-XXXX)
 ```
 
-Open it in a browser, sign in with the subscribed account, and wait for `authorization completed` in the console. In the GUI, `/qwen-login` reprints the pending link or starts a new one, `/qwen-status` shows the current state.
+Open it in a browser (you must already be signed in to chat.qwen.ai), approve the code, and wait for `авторизация завершена` in the log. Then run `/qwen-setup` to register the route. In the GUI, `/qwen-login` reprints the pending link or starts a new one, `/qwen-status` shows the current state.
 
 ## Usage
 
@@ -84,7 +80,7 @@ If you prefer to declare the route yourself, disable `configureRoute` and add it
 | Step | Request |
 |---|---|
 | Device code | `POST https://auth.qwen.ai/api/oauth/device/code` — `client_id=qwen-code-cli`, `scope="model:invoke profile:read"` |
-| User approves | `https://chat.qwen.ai/device?user_code=…` |
+| User approves | `https://chat.qwen.ai/authorize?user_code=…&client=cli` (the advertised `/device` URI has no SPA route) |
 | Token | `POST https://auth.qwen.ai/api/oauth/token` — `grant_type=urn:ietf:params:oauth:grant-type:device_code` |
 | Refresh | `POST https://auth.qwen.ai/api/oauth/token` — `grant_type=refresh_token` |
 | Profile | `GET https://auth.qwen.ai/api/oauth/userinfo` |
