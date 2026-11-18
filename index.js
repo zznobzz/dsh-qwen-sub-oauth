@@ -61,6 +61,7 @@ export const name = 'qwen-sub-oauth'
 // DSH composition provides. The optional surfaces (slash commands, the system
 // prompt relay) are mounted through child ctx.inject fibers below, which stay
 // inactive when a host lacks those services instead of blocking activation.
+export const inject = ['credentials']
 
 /**
  * The approval page. The device-code response advertises `/device`, but the

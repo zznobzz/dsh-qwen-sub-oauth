@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.7
+
+- Restore the `export const inject = ['credentials']` line, lost in the 1.3.2 rewrite: without it the plugin exported no dependency declaration, so on a fresh boot the row mounted with an empty injection set and every service read threw 'cannot get property "credentials" without inject' until the host was patched by hand. The profile-layer override is no longer needed.
+
 ## 1.3.6
 
 - Declare `engines.dsh: '>=0.2.1'`: the plugin's activation depends on the postmortem-0001-safe service reads and the config-editor/HMR behavior of recent runtimes; older hosts should stay on ≤1.2.x.
