@@ -341,7 +341,12 @@ export function apply(ctx, config) {
     }
   })
 
-  if (configureRoute) void ensureRoute(ctx, warn)
+  // Deferred: the bundle activation itself runs inside an HMR transaction, and
+  // the config editor opens its own one.
+  if (configureRoute) {
+    const defer = setTimeout(() => void ensureRoute(ctx, warn), 2000)
+    defer.unref?.()
+  }
 
   void (async () => {
     await tick()
