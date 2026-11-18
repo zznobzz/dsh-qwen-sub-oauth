@@ -49,9 +49,11 @@ const SKEW_MS = 10 * 60 * 1000
 const TIMEOUT_MS = 30_000
 
 export const name = 'qwen-sub-oauth'
-export const inject = ['credentials']
-// Optional surfaces reached through ctx.get: 'commands' (slash commands),
-// 'userQuestions' (interactive cards), 'agents' (live-agent lookup).
+// Hard dependency: credentials. Declared-optional dependencies make this row
+// activate only after the agent/session rows mount, so an auto-started flow
+// can find live sessions to show its card in; everything else is reached
+// through ctx.get and stays absent on headless compositions.
+export const inject = { required: ['credentials'], optional: ['agents', 'commands', 'systemPrompt'] }
 
 /**
  * The approval page. The device-code response advertises `/device`, but the
@@ -198,6 +200,25 @@ export function apply(ctx, config) {
     controller = undefined
   }
 
+  /** Relay the live approval URL through the system prompt until it settles. */
+  let loginSectionDispose
+  const registerLoginSection = target => {
+    const systemPrompt = ctx.get('systemPrompt')
+    if (systemPrompt === undefined || config?.promptSection === false) return
+    loginSectionDispose?.()
+    const url = target.verification_uri_complete
+    const code = target.user_code
+    loginSectionDispose = systemPrompt.section({
+      name: 'qwen-sub-oauth-login',
+      order: 900,
+      interpolate: false,
+      text: () => 'QWEN LOGIN PENDING: the Qwen subscription sign-in awaits user approval. '
+        + `Open ${url} in a browser logged into a Qwen account with an active Plus/Pro subscription `
+        + `(user code ${code}). Show this exact URL to the user verbatim as soon as useful, then say the `
+        + 'Harness completes the sign-in automatically after approval — no further action is needed here.',
+    })
+  }
+
   const storeTokens = async tokens => {
     await ctx.credentials.set(ACCESS_REF, tokens.access_token)
     if (typeof tokens.refresh_token === 'string' && tokens.refresh_token !== '') {
@@ -271,6 +292,8 @@ export function apply(ctx, config) {
         if (ok && typeof body?.access_token === 'string') {
           await storeTokens(body)
           pending = undefined
+          loginSectionDispose?.()
+          loginSectionDispose = undefined
           email = await getUserInfo(body.access_token)
           log('info', `авторизация завершена${email ? ` (${email})` : ''}`)
           console.info(`[qwen-sub-oauth] авторизация завершена${email ? ` (${email})` : ''}`)
@@ -284,6 +307,8 @@ export function apply(ctx, config) {
         }
         if (code === 'expired_token' || code === 'access_denied') {
           pending = undefined
+          loginSectionDispose?.()
+          loginSectionDispose = undefined
           warn(`авторизация не завершена: ${code}`)
           return
         }
@@ -294,7 +319,11 @@ export function apply(ctx, config) {
         warn(`token exchange failed (HTTP ${status}): ${code ?? 'unknown error'}`)
         return
       }
-      if (pending === flow) pending = undefined
+      if (pending === flow) {
+        pending = undefined
+        loginSectionDispose?.()
+        loginSectionDispose = undefined
+      }
     } catch (error) {
       if (!signal.aborted) warn(`polling failed: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -321,52 +350,35 @@ export function apply(ctx, config) {
     return `Авторизовано${email ? ` (${email})` : ''}, access-токен ${left}`
   }
 
-  /** The exact live Agent instance registered in this Host (ask rejects foreign instances). */
-  const liveAgent = agent => {
-    const agents = ctx.get('agents')
-    if (agents === undefined || agent === undefined) return undefined
-    return agents.get(agent.session?.id) ?? undefined
-  }
-
   /** Pending non-expired flow, clearing an expired one. */
   const describePendingFlow = () => {
     if (pending === undefined) return undefined
     if (Date.now() >= pending.expiresAt) {
       pending = undefined
+      loginSectionDispose?.()
+      loginSectionDispose = undefined
       return undefined
     }
     return pending
   }
 
   /**
-   * Show the approval link where the user can actually act on it. A command's
-   * multi-line result collapses into a disclosure row and long URLs break on
-   * wrapping there, so when the requesting agent is live the link goes out as
-   * an interactive card in the chat instead.
+   * Surface the pending flow to the user. The chat model re-reads the system
+   * prompt every step, and this plugin contributes a section that names the
+   * live verification link, so any turn relays it before answering. A command
+   * result collapses multi-line text into a disclosure row and long URLs break
+   * on wrapping there, so the command only confirms the flow and points at the
+   * prompt relay; the full unbroken link also stays in $DSH_HOME log.
    */
-  const presentFlow = async (flow, invocation) => {
-    const questions = ctx.get('userQuestions')
-    const agent = liveAgent(invocation.agent)
-    if (questions !== undefined && agent !== undefined) {
-      void questions.ask({
-        agent,
-        signal: AbortSignal.any([invocation.signal, AbortSignal.timeout(flow.expiresAt - Date.now())]),
-        questions: [{
-          id: 'approve',
-          question: 'Подтвердите вход в Qwen (аккаунт с активной подпиской Plus/Pro)',
-          detail: flowDetail(flow),
-          options: [{ label: 'Я подтвердил вход' }, { label: 'Отмена' }],
-        }],
-      }).then(answer => {
-        if (answer.answers[0]?.selected[0] === 'Я подтвердил вход') {
-          log('info', 'пользователь подтвердил вход в карточке')
-        }
-      }).catch(error => {
-        if (!invocation.signal.aborted) warn(`карточка входа недоступна: ${error instanceof Error ? error.message : String(error)}`)
-      })
-      return { kind: 'success', text: `Карточка со ссылкой входа открыта в этом чате. Код: ${flow.user_code}, ${formatLeft(flow.expiresAt - Date.now())}` }
+  const presentFlow = async flow => {
+    // A fresh registration replaces the previous one (disposal runs before
+    // apply re-registers), so every relay sees the current link without any
+    // cache-busting marker.
+    registerLoginSection(flow)
+    return {
+      kind: 'success',
+      text: `Вход ожидает подтверждения. Ссылка передана в системный промпт и будет показана на следующем шаге; она же в ${LOG_FILE}. Код: ${flow.user_code}, осталось ${formatLeft(flow.expiresAt - Date.now())}`,
     }
-    return { kind: 'success', text: flowMessage(flow) }
   }
 
   const commands = ctx.get('commands')
@@ -382,7 +394,8 @@ export function apply(ctx, config) {
             if (refresh?.value !== undefined && refresh.value !== '') {
               // Signed in already: re-auth only makes sense for a different account.
               const questions = ctx.get('userQuestions')
-              const agent = liveAgent(invocation.agent)
+              const agents = ctx.get('agents')
+              const agent = invocation.agent !== undefined ? agents?.get(invocation.agent.session?.id) ?? invocation.agent : agents?.currentInitiator()
               if (questions !== undefined && agent !== undefined) {
                 const answer = await questions.ask({
                   agent,
@@ -438,6 +451,8 @@ export function apply(ctx, config) {
     return () => {
       clearInterval(timer)
       stopPoll()
+      loginSectionDispose?.()
+      loginSectionDispose = undefined
     }
   })
 
@@ -461,23 +476,10 @@ export function apply(ctx, config) {
     try {
       const flow = await startFlow()
       // The host has no visible console on every deployment, so offer the link
-      // as a card in each live chat; answering is optional — polling completes
-      // the sign-in from any tab that gets the approval.
-      const questions = ctx.get('userQuestions')
-      const agents = ctx.get('agents')
-      if (questions === undefined || agents === undefined) return
-      for (const agent of agents.roots()) {
-        void questions.ask({
-          agent,
-          signal: AbortSignal.timeout(flow.expiresAt - Date.now()),
-          questions: [{
-            id: 'approve',
-            question: 'Qwen по подписке: подтвердите вход (аккаунт с активной подпиской Plus/Pro)',
-            detail: flowDetail(flow),
-            options: [{ label: 'Я подтвердил вход' }, { label: 'Отмена' }],
-          }],
-        }).catch(() => {})
-      }
+      // as a card in the chat the user is looking at: the session this plugin
+      // was mounted under first, otherwise every root session. Answering is
+      // optional — polling completes the sign-in from any tab that approves.
+      await presentFlow(flow, {})
     } catch (error) {
       warn(`не удалось начать авторизацию: ${error instanceof Error ? error.message : String(error)}`)
     }

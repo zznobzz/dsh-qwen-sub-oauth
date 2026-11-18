@@ -10,7 +10,7 @@ The old free Qwen OAuth (`chat.qwen.ai/api/v1/oauth2/*`) was shut down on 2026-0
 
 - Registers the provider route `qwen-sub-oauth` (`api.qwen.ai/compatible-mode/v1`, models `qwen3.8-max`, `qwen3.8-flash`, `qwen4-max`, 1M context) in `llm-pi-ai` through the DSH config editor. It tries on activation; if the host refuses the edit while the install transaction is still open, `/qwen-setup` completes it.
 - Starts the OAuth device flow on activation when no refresh token is stored yet, and prints the verification URL to the host console.
-- Exposes `/qwen-login` (opens an interactive card in the chat with the approval link, code and expiry; starts a fresh flow when needed), `/qwen-status` (token presence and expiry) and `/qwen-setup` (register the route again if the automatic attempt was refused). On activation the same card is offered to every live chat session, so the link is visible without opening logs.
+- While a sign-in is pending, relays the exact approval URL through a system-prompt section, so the assistant shows it verbatim in any chat. Commands: `/qwen-login` (confirm the pending code or start a fresh flow), `/qwen-status` (token presence and expiry), `/qwen-setup` (register the route again if the automatic attempt was refused). The link is also logged to `$DSH_HOME/qwen-sub-oauth.log`.
 - Refreshes the access token before it expires and writes `QWEN_SUB_OAUTH_TOKEN` / `QWEN_SUB_OAUTH_REFRESH` into the credential store. LLM adapters re-read the reference per request, so rotation needs no restart.
 
 ## Requirements
@@ -32,7 +32,7 @@ On first activation the plugin starts the device flow and logs a link such as:
 [qwen-sub-oauth] авторизация: https://chat.qwen.ai/authorize?user_code=XXXX-XXXX&client=cli (код XXXX-XXXX)
 ```
 
-Open it in a browser (you must already be signed in to chat.qwen.ai), approve the code, and wait for `авторизация завершена` in the log. Then run `/qwen-setup` to register the route. In the GUI, `/qwen-login` reprints the pending link or starts a new one, `/qwen-status` shows the current state.
+Open it in a browser (you must already be signed in to chat.qwen.ai), approve the code, and wait for `авторизация завершена` in the log — or just ask the assistant to show the login link, it relays the live URL from its system prompt. Then run `/qwen-setup` to register the route. In the GUI, `/qwen-login` reprints the pending link or starts a new one, `/qwen-status` shows the current state.
 
 ## Usage
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0
+
+- The approval link now reaches the user through a system-prompt section instead of an interactive card: `userQuestions.ask()` from a plugin fails with `NO_PROVIDER` in the Web profile (its answerer only accepts tool-scoped requests), so the previous "card" path never rendered for anyone but the answering model. While a sign-in is pending, the plugin contributes a prompt section that names the exact `/authorize` URL and instructs the assistant to relay it verbatim; the section is disposed once the flow completes, expires or unmounts. `/qwen-login` confirms the pending code and points at the relay.
+- Activation auto-start keeps logging the link to `$DSH_HOME/qwen-sub-oauth.log`.
+
 ## 1.2.1
 
 - `/qwen-login` now surfaces the approval link as an interactive question card in the chat (via `userQuestions`) instead of only the command result: a multi-line command outcome collapses into a disclosure row and long URLs break on wrapping there, which users could not act on. The card carries a clickable markdown link plus the code and expiry; answering it is optional — polling completes the sign-in regardless.
