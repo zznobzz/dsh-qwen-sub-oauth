@@ -42,7 +42,7 @@ const SKEW_MS = 10 * 60 * 1000
 const TIMEOUT_MS = 30_000
 
 export const name = 'qwen-sub-oauth'
-export const inject = { required: ['credentials'], optional: ['commands'] }
+export const inject = ['credentials']
 
 /** Decode a JWT payload without verifying it; `undefined` for opaque tokens. */
 function jwtPayload(token) {
