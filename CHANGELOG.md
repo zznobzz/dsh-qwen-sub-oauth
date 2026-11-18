@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.5
+
+- Register the route with capabilities verified against api.qwen.ai: prompt-cache markers (`compat.cacheControlFormat: anthropic` + `cacheRetention: short`) — repeated turns now report ~2k cached prompt tokens; declared `reasoningEfforts` (low/medium/high/xhigh over `reasoning_effort`; off sends nothing).
+
 ## 1.3.4
 
 - Declare `input: [text, image]` on the registered route models: without it a hand-declared entry defaults to text-only, so the GUI refused images on Qwen subscription chats even though the gateway serves vision (verified against qwen4-max).

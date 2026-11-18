@@ -35,10 +35,17 @@ const ACCESS_REF = 'QWEN_SUB_OAUTH_TOKEN'
 /** Credential ref holding the refresh token. */
 const REFRESH_REF = 'QWEN_SUB_OAUTH_REFRESH'
 const ROUTE = 'qwen-sub-oauth'
+/**
+ * Reasoning dispatch for the route. The gateway ignores `enable_thinking` and
+ * reads `reasoning_effort`, so pi-ai's generic chat-completions branch is the
+ * right one; declaring the map explicitly keeps every advertised level a real
+ * wire value ('minimal'/'max' have none here, so they are not offered).
+ */
+const QWEN_REASONING_EFFORTS = { off: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' }
 const ROUTE_MODELS = [
-  { id: 'qwen3.8-max', name: 'Qwen3.8 Max', contextWindow: 1000000, maxTokens: 32768 },
-  { id: 'qwen3.8-flash', name: 'Qwen3.8 Flash', contextWindow: 1000000, maxTokens: 32768 },
-  { id: 'qwen4-max', name: 'Qwen4 Max', contextWindow: 1000000, maxTokens: 32768 },
+  { id: 'qwen3.8-max', name: 'Qwen3.8 Max', contextWindow: 1000000, maxTokens: 32768, reasoningEfforts: QWEN_REASONING_EFFORTS },
+  { id: 'qwen3.8-flash', name: 'Qwen3.8 Flash', contextWindow: 1000000, maxTokens: 32768, reasoningEfforts: QWEN_REASONING_EFFORTS },
+  { id: 'qwen4-max', name: 'Qwen4 Max', contextWindow: 1000000, maxTokens: 32768, reasoningEfforts: QWEN_REASONING_EFFORTS },
 ]
 /** Host-process log next to the harness home: the web UI has no console. */
 const LOG_FILE = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'qwen-sub-oauth.log')
@@ -166,6 +173,15 @@ async function ensureRoute(ctx, warn) {
           baseURL: API_BASE,
           apiKeyEnv: ACCESS_REF,
           models: ROUTE_MODELS.map(model => ({ ...model, input: ['text', 'image'] })),
+        // Gateway specifics verified against api.qwen.ai on 2026-11-18:
+        // anthropic-style cache_control markers (system or last message) hit
+        // the implicit prefix cache (~2k tokens cached per repeated turn);
+        // pi-ai also marks the last tool, which the gateway tolerates but then
+        // does NOT cache — acceptable trade-off, still better than no marker.
+        // reasoning_effort is honored; developer role and max_completion_tokens
+        // are accepted, so pi-ai's autodetected defaults stay untouched.
+        compat: { cacheControlFormat: 'anthropic', supportsReasoningEffort: true },
+        cacheRetention: 'short',
         },
       },
     }))
