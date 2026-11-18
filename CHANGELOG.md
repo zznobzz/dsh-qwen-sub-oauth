@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- `/qwen-login` now surfaces the approval link as an interactive question card in the chat (via `userQuestions`) instead of only the command result: a multi-line command outcome collapses into a disclosure row and long URLs break on wrapping there, which users could not act on. The card carries a clickable markdown link plus the code and expiry; answering it is optional — polling completes the sign-in regardless.
+- Falls back to plain text when no live agent or user-questions service is available (headless, non-chat dispatch).
+
 ## 1.2.0
 
 Verified end-to-end against a live Qwen Plus/Pro subscription.

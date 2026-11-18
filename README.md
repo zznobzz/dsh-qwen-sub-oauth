@@ -10,7 +10,7 @@ The old free Qwen OAuth (`chat.qwen.ai/api/v1/oauth2/*`) was shut down on 2026-0
 
 - Registers the provider route `qwen-sub-oauth` (`api.qwen.ai/compatible-mode/v1`, models `qwen3.8-max`, `qwen3.8-flash`, `qwen4-max`, 1M context) in `llm-pi-ai` through the DSH config editor. It tries on activation; if the host refuses the edit while the install transaction is still open, `/qwen-setup` completes it.
 - Starts the OAuth device flow on activation when no refresh token is stored yet, and prints the verification URL to the host console.
-- Exposes `/qwen-login` (show the pending URL/code, or start a fresh flow), `/qwen-status` (token presence and expiry) and `/qwen-setup` (register the route again if the automatic attempt was refused) inside the GUI.
+- Exposes `/qwen-login` (opens an interactive card in the chat with the approval link, code and expiry; starts a fresh flow when needed), `/qwen-status` (token presence and expiry) and `/qwen-setup` (register the route again if the automatic attempt was refused). On activation the same card is offered to every live chat session, so the link is visible without opening logs.
 - Refreshes the access token before it expires and writes `QWEN_SUB_OAUTH_TOKEN` / `QWEN_SUB_OAUTH_REFRESH` into the credential store. LLM adapters re-read the reference per request, so rotation needs no restart.
 
 ## Requirements

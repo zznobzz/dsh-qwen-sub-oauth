@@ -50,6 +50,8 @@ const TIMEOUT_MS = 30_000
 
 export const name = 'qwen-sub-oauth'
 export const inject = ['credentials']
+// Optional surfaces reached through ctx.get: 'commands' (slash commands),
+// 'userQuestions' (interactive cards), 'agents' (live-agent lookup).
 
 /**
  * The approval page. The device-code response advertises `/device`, but the
@@ -298,14 +300,16 @@ export function apply(ctx, config) {
     }
   }
 
-  const describePending = () => {
-    if (pending === undefined) return undefined
-    if (Date.now() >= pending.expiresAt) {
-      pending = undefined
-      return undefined
-    }
-    return `Ссылка: ${pending.verification_uri_complete}\nКод: ${pending.user_code}\nОсталось: ${formatLeft(pending.expiresAt - Date.now())}`
-  }
+  /** Markdown body for the interactive card: a labeled bare link stays clickable. */
+  const flowDetail = flow =>
+    `[Открыть страницу подтверждения](${flow.verification_uri_complete})\n\n`
+    + `Код: \`${flow.user_code}\` · истекает через ${formatLeft(flow.expiresAt - Date.now())}`
+
+  /** Plain-text fallback for the command result: keep the URL on its own line. */
+  const flowMessage = flow =>
+    `Подтвердите вход в браузере — откройте ссылку (нужна активная подписка Plus/Pro):\n\n`
+    + `${flow.verification_uri_complete}\n\n`
+    + `Код: ${flow.user_code} · истекает через ${formatLeft(flow.expiresAt - Date.now())}`
 
   const status = async () => {
     const access = await ctx.credentials.resolve(ACCESS_REF)
@@ -317,24 +321,89 @@ export function apply(ctx, config) {
     return `Авторизовано${email ? ` (${email})` : ''}, access-токен ${left}`
   }
 
+  /** The exact live Agent instance registered in this Host (ask rejects foreign instances). */
+  const liveAgent = agent => {
+    const agents = ctx.get('agents')
+    if (agents === undefined || agent === undefined) return undefined
+    return agents.get(agent.session?.id) ?? undefined
+  }
+
+  /** Pending non-expired flow, clearing an expired one. */
+  const describePendingFlow = () => {
+    if (pending === undefined) return undefined
+    if (Date.now() >= pending.expiresAt) {
+      pending = undefined
+      return undefined
+    }
+    return pending
+  }
+
+  /**
+   * Show the approval link where the user can actually act on it. A command's
+   * multi-line result collapses into a disclosure row and long URLs break on
+   * wrapping there, so when the requesting agent is live the link goes out as
+   * an interactive card in the chat instead.
+   */
+  const presentFlow = async (flow, invocation) => {
+    const questions = ctx.get('userQuestions')
+    const agent = liveAgent(invocation.agent)
+    if (questions !== undefined && agent !== undefined) {
+      void questions.ask({
+        agent,
+        signal: AbortSignal.any([invocation.signal, AbortSignal.timeout(flow.expiresAt - Date.now())]),
+        questions: [{
+          id: 'approve',
+          question: 'Подтвердите вход в Qwen (аккаунт с активной подпиской Plus/Pro)',
+          detail: flowDetail(flow),
+          options: [{ label: 'Я подтвердил вход' }, { label: 'Отмена' }],
+        }],
+      }).then(answer => {
+        if (answer.answers[0]?.selected[0] === 'Я подтвердил вход') {
+          log('info', 'пользователь подтвердил вход в карточке')
+        }
+      }).catch(error => {
+        if (!invocation.signal.aborted) warn(`карточка входа недоступна: ${error instanceof Error ? error.message : String(error)}`)
+      })
+      return { kind: 'success', text: `Карточка со ссылкой входа открыта в этом чате. Код: ${flow.user_code}, ${formatLeft(flow.expiresAt - Date.now())}` }
+    }
+    return { kind: 'success', text: flowMessage(flow) }
+  }
+
   const commands = ctx.get('commands')
   if (commands !== undefined) {
     ctx.effect(() => commands.register({
       name: 'qwen-login',
       description: 'Вход в Qwen по подписке (OAuth device flow)',
-      handler: async () => {
+      handler: async invocation => {
         try {
-          const shown = describePending()
-          if (shown !== undefined) return { kind: 'success', text: `Подтвердите вход в браузере.\n${shown}` }
-          const refresh = await ctx.credentials.resolve(REFRESH_REF)
-          if (refresh?.value !== undefined && refresh.value !== '') {
-            return { kind: 'success', text: `Уже авторизовано. ${await status()}\nЧтобы войти заново, удалите ref ${REFRESH_REF}.` }
+          let flow = describePendingFlow()
+          if (flow === undefined) {
+            const refresh = await ctx.credentials.resolve(REFRESH_REF)
+            if (refresh?.value !== undefined && refresh.value !== '') {
+              // Signed in already: re-auth only makes sense for a different account.
+              const questions = ctx.get('userQuestions')
+              const agent = liveAgent(invocation.agent)
+              if (questions !== undefined && agent !== undefined) {
+                const answer = await questions.ask({
+                  agent,
+                  signal: invocation.signal,
+                  questions: [{
+                    id: 'relogin',
+                    question: `Вы уже авторизованы (${email ?? 'аккаунт без email'}). Начать новый вход для другой учётной записи?`,
+                    options: [{ label: 'Начать новый вход' }, { label: 'Отмена' }],
+                  }],
+                })
+                const item = answer.answers[0]
+                if (item === undefined || item.selected[0] !== 'Начать новый вход') {
+                  return { kind: 'success', text: await status() }
+                }
+              } else {
+                return { kind: 'success', text: `Уже авторизовано. ${await status()}\nЧтобы войти заново, удалите ref ${REFRESH_REF}.` }
+              }
+            }
+            flow = await startFlow()
           }
-          const flow = await startFlow()
-          return {
-            kind: 'success',
-            text: `Откройте ссылку и войдите аккаунтом с подпиской Plus/Pro.\nСсылка: ${flow.verification_uri_complete}\nКод: ${flow.user_code}\nОсталось: ${formatLeft(flow.expiresAt - Date.now())}`,
-          }
+          return presentFlow(flow, invocation)
         } catch (error) {
           return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
         }
@@ -390,7 +459,25 @@ export function apply(ctx, config) {
     const refresh = await ctx.credentials.resolve(REFRESH_REF)
     if (refresh?.value !== undefined && refresh.value !== '') return
     try {
-      await startFlow()
+      const flow = await startFlow()
+      // The host has no visible console on every deployment, so offer the link
+      // as a card in each live chat; answering is optional — polling completes
+      // the sign-in from any tab that gets the approval.
+      const questions = ctx.get('userQuestions')
+      const agents = ctx.get('agents')
+      if (questions === undefined || agents === undefined) return
+      for (const agent of agents.roots()) {
+        void questions.ask({
+          agent,
+          signal: AbortSignal.timeout(flow.expiresAt - Date.now()),
+          questions: [{
+            id: 'approve',
+            question: 'Qwen по подписке: подтвердите вход (аккаунт с активной подпиской Plus/Pro)',
+            detail: flowDetail(flow),
+            options: [{ label: 'Я подтвердил вход' }, { label: 'Отмена' }],
+          }],
+        }).catch(() => {})
+      }
     } catch (error) {
       warn(`не удалось начать авторизацию: ${error instanceof Error ? error.message : String(error)}`)
     }
