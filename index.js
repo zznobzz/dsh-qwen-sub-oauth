@@ -114,9 +114,9 @@ async function ensureRoute(ctx, warn) {
   const editor = ctx.get('configEditor')
   if (editor === undefined) return
   try {
-    const entry = editor.entries().find(row => row.name === '@deepseek-ai/dsh-llm-pi-ai')
+    const entry = editor.entries().find(row => row.options?.name === '@deepseek-ai/dsh-llm-pi-ai')
     if (entry === undefined) return
-    const { override } = editor.configuration().find(row => row.entry.id === entry.id) ?? {}
+    const { override } = editor.configuration().find(row => row.entry.options.id === entry.options.id) ?? {}
     const providers = override?.providers
     if (providers !== null && typeof providers === 'object' && ROUTE in providers) return
     await editor.edit(entry, current => ({
