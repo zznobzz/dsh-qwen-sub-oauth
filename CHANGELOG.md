@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.6
+
+- Declare `engines.dsh: '>=0.2.1'`: the plugin's activation depends on the postmortem-0001-safe service reads and the config-editor/HMR behavior of recent runtimes; older hosts should stay on ≤1.2.x.
+
 ## 1.3.5
 
 - Register the route with capabilities verified against api.qwen.ai: prompt-cache markers (`compat.cacheControlFormat: anthropic` + `cacheRetention: short`) — repeated turns now report ~2k cached prompt tokens; declared `reasoningEfforts` (low/medium/high/xhigh over `reasoning_effort`; off sends nothing).
