@@ -1,0 +1,7 @@
+- insert:
+    - id: qwen-sub-oauth
+      name: '@local/dsh-qwen-sub-oauth'
+      config:
+        autoLogin: true
+        configureRoute: true
+        intervalMs: 600000

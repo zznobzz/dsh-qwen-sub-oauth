@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Qwen subscription OAuth",
+    "description": "Rotates a Qwen Plus/Pro OAuth access token in the credential store so an api.qwen.ai route keeps working."
+  }
+}

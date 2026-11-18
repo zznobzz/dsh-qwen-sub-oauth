@@ -1,0 +1,21 @@
+{
+  "name": "dsh-qwen-sub-oauth",
+  "version": "1.1.0",
+  "description": "Qwen Plus/Pro subscription as a DeepSeek Harness provider: OAuth device flow, automatic token rotation, no API key.",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["dsh-plugin", "dsh", "deepseek-harness", "qwen", "qwen-code", "oauth", "llm-provider"],
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md", "README.ru.md", "LICENSE"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zznobzz/dsh-qwen-sub-oauth.git"
+  },
+  "engines": { "node": ">=22" }
+}

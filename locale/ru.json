@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Qwen по подписке (OAuth)",
+    "description": "Обновляет OAuth-токен подписки Qwen Plus/Pro в хранилище кредов, чтобы маршрут api.qwen.ai работал постоянно."
+  }
+}
