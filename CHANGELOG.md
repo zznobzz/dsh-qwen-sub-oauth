@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2
+
+- Fix activation for real: Cordis has no `required`/`optional`/`any` inject forms — every declared service gates the row, so 1.3.0/1.3.1 stayed pending (`waiting for services`) on hosts lacking one of them. The row now requires only `credentials`; the slash commands and the system-prompt relay mount as child `ctx.inject` fibers that simply stay inactive when their surface is absent.
+- `/qwen-login --force` starts a new sign-in over an existing session; the interactive re-auth question (which could not be answered from plugin context) is gone.
+
 ## 1.3.1
 
 - Fix activation: the object-form `inject` added in 1.3.0 made the row stay pending (Cordis reads a bare array as all-required); now only `credentials` is required, with `commands`/`systemPrompt` as an `any` gate and `agents` optional.

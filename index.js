@@ -49,11 +49,11 @@ const SKEW_MS = 10 * 60 * 1000
 const TIMEOUT_MS = 30_000
 
 export const name = 'qwen-sub-oauth'
-// Hard dependency: credentials. Declared-optional dependencies make this row
-// activate only after the agent/session rows mount, so an auto-started flow
-// can find live sessions to show its card in; everything else is reached
-// through ctx.get and stays absent on headless compositions.
-export const inject = { required: ['credentials'], optional: ['agents', 'commands', 'systemPrompt'] }
+// Cordis gates activation on EVERY declared service — there is no optional or
+// `any` inject form — so the row requires only the credential store, which any
+// DSH composition provides. The optional surfaces (slash commands, the system
+// prompt relay) are mounted through child ctx.inject fibers below, which stay
+// inactive when a host lacks those services instead of blocking activation.
 
 /**
  * The approval page. The device-code response advertises `/device`, but the
@@ -200,23 +200,13 @@ export function apply(ctx, config) {
     controller = undefined
   }
 
-  /** Relay the live approval URL through the system prompt until it settles. */
-  let loginSectionDispose
+  /** Set while a device flow waits for approval; read by the prompt relay below. */
+  let pendingRelay
   const registerLoginSection = target => {
-    const systemPrompt = ctx.get('systemPrompt')
-    if (systemPrompt === undefined || config?.promptSection === false) return
-    loginSectionDispose?.()
-    const url = target.verification_uri_complete
-    const code = target.user_code
-    loginSectionDispose = systemPrompt.section({
-      name: 'qwen-sub-oauth-login',
-      order: 900,
-      interpolate: false,
-      text: () => 'QWEN LOGIN PENDING: the Qwen subscription sign-in awaits user approval. '
-        + `Open ${url} in a browser logged into a Qwen account with an active Plus/Pro subscription `
-        + `(user code ${code}). Show this exact URL to the user verbatim as soon as useful, then say the `
-        + 'Harness completes the sign-in automatically after approval — no further action is needed here.',
-    })
+    pendingRelay = target === undefined ? undefined : {
+      url: target.verification_uri_complete,
+      code: target.user_code,
+    }
   }
 
   const storeTokens = async tokens => {
@@ -292,8 +282,7 @@ export function apply(ctx, config) {
         if (ok && typeof body?.access_token === 'string') {
           await storeTokens(body)
           pending = undefined
-          loginSectionDispose?.()
-          loginSectionDispose = undefined
+          registerLoginSection(undefined)
           email = await getUserInfo(body.access_token)
           log('info', `авторизация завершена${email ? ` (${email})` : ''}`)
           console.info(`[qwen-sub-oauth] авторизация завершена${email ? ` (${email})` : ''}`)
@@ -307,8 +296,7 @@ export function apply(ctx, config) {
         }
         if (code === 'expired_token' || code === 'access_denied') {
           pending = undefined
-          loginSectionDispose?.()
-          loginSectionDispose = undefined
+          registerLoginSection(undefined)
           warn(`авторизация не завершена: ${code}`)
           return
         }
@@ -321,8 +309,7 @@ export function apply(ctx, config) {
       }
       if (pending === flow) {
         pending = undefined
-        loginSectionDispose?.()
-        loginSectionDispose = undefined
+        registerLoginSection(undefined)
       }
     } catch (error) {
       if (!signal.aborted) warn(`polling failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -355,8 +342,7 @@ export function apply(ctx, config) {
     if (pending === undefined) return undefined
     if (Date.now() >= pending.expiresAt) {
       pending = undefined
-      loginSectionDispose?.()
-      loginSectionDispose = undefined
+      registerLoginSection(undefined)
       return undefined
     }
     return pending
@@ -381,9 +367,27 @@ export function apply(ctx, config) {
     }
   }
 
-  const commands = ctx.get('commands')
-  if (commands !== undefined) {
-    ctx.effect(() => commands.register({
+  // Child fiber: relays the pending approval link through the system prompt so
+  // any chat turn can show it verbatim. Cordis keeps this fiber inactive when
+  // the host has no prompt registry instead of blocking the row's activation.
+  ctx.inject(['systemPrompt'], scope => {
+    scope.effect(() => scope.systemPrompt.section({
+      name: 'qwen-sub-oauth-login',
+      order: 8500,
+      interpolate: false,
+      text: () => pendingRelay === undefined ? ''
+        : 'QWEN LOGIN PENDING: the Qwen subscription sign-in awaits user approval. '
+        + `Open ${pendingRelay.url} in a browser logged into a Qwen account with an active Plus/Pro `
+        + `subscription (user code ${pendingRelay.code}). Show this exact URL to the user verbatim as `
+        + 'soon as useful, then say the Harness completes the sign-in automatically after approval — '
+        + 'no further action is needed here.',
+    }))
+  })
+
+  // Child fiber: registers the slash commands only where a command surface exists.
+  ctx.inject(['commands'], scope => {
+    const commands = scope.commands
+    scope.effect(() => commands.register({
       name: 'qwen-login',
       description: 'Вход в Qwen по подписке (OAuth device flow)',
       handler: async invocation => {
@@ -391,28 +395,9 @@ export function apply(ctx, config) {
           let flow = describePendingFlow()
           if (flow === undefined) {
             const refresh = await ctx.credentials.resolve(REFRESH_REF)
-            if (refresh?.value !== undefined && refresh.value !== '') {
-              // Signed in already: re-auth only makes sense for a different account.
-              const questions = ctx.get('userQuestions')
-              const agents = ctx.get('agents')
-              const agent = invocation.agent !== undefined ? agents?.get(invocation.agent.session?.id) ?? invocation.agent : agents?.currentInitiator()
-              if (questions !== undefined && agent !== undefined) {
-                const answer = await questions.ask({
-                  agent,
-                  signal: invocation.signal,
-                  questions: [{
-                    id: 'relogin',
-                    question: `Вы уже авторизованы (${email ?? 'аккаунт без email'}). Начать новый вход для другой учётной записи?`,
-                    options: [{ label: 'Начать новый вход' }, { label: 'Отмена' }],
-                  }],
-                })
-                const item = answer.answers[0]
-                if (item === undefined || item.selected[0] !== 'Начать новый вход') {
-                  return { kind: 'success', text: await status() }
-                }
-              } else {
-                return { kind: 'success', text: `Уже авторизовано. ${await status()}\nЧтобы войти заново, удалите ref ${REFRESH_REF}.` }
-              }
+            if (refresh?.value !== undefined && refresh.value !== '' && invocation.rawInput.trim() !== '--force') {
+              // Re-auth only makes sense for a different account; keep it explicit.
+              return { kind: 'success', text: `Уже авторизовано. ${await status()}\nДля другого аккаунта: /qwen-login --force.` }
             }
             flow = await startFlow()
           }
@@ -423,7 +408,7 @@ export function apply(ctx, config) {
       },
     }))
 
-    ctx.effect(() => commands.register({
+    scope.effect(() => commands.register({
       name: 'qwen-setup',
       description: 'Добавить маршрут qwen-sub-oauth в llm-pi-ai',
       handler: async () => {
@@ -434,12 +419,12 @@ export function apply(ctx, config) {
       },
     }))
 
-    ctx.effect(() => commands.register({
+    scope.effect(() => commands.register({
       name: 'qwen-status',
       description: 'Состояние авторизации Qwen по подписке',
       handler: async () => ({ kind: 'success', text: await status() }),
     }))
-  }
+  })
 
   const tick = () => rotate().catch(error => {
     warn(error instanceof Error ? error.message : String(error))
@@ -451,8 +436,7 @@ export function apply(ctx, config) {
     return () => {
       clearInterval(timer)
       stopPoll()
-      loginSectionDispose?.()
-      loginSectionDispose = undefined
+      registerLoginSection(undefined)
     }
   })
 
